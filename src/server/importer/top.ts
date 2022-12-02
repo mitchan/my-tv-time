@@ -1,28 +1,34 @@
-import axios from 'axios';
 import * as cheerio from 'cheerio';
 
-const BASE_PATH = 'https://www.imdb.com';
+import config from '../../core/config';
+import { HttpClient } from '../../utils/httpClient';
+import { wait } from '../../utils/wait';
 
 type FilmLink = {
     text: string;
     href: string;
 };
 
+const httpClient = new HttpClient();
+
 export async function loadTop(): Promise<void> {
-    const { data } = await axios.get(`${BASE_PATH}/chart/top/`);
+    const data = await httpClient.get(`${config.paths.imdb}/chart/top/`);
 
     const $ = cheerio.load(data);
 
     const links: FilmLink[] = [];
     $('td.titleColumn a').each((i, el) => {
-        const data = getData($, el);
+        const data = getLinkData($, el);
         links.push(data);
     });
 
-    console.log(links.length);
+    for (let link of links) {
+        await loadFilm(link);
+        await wait();
+    }
 }
 
-function getData($: cheerio.CheerioAPI, el: cheerio.Element): FilmLink {
+function getLinkData($: cheerio.CheerioAPI, el: cheerio.Element): FilmLink {
     const href = $(el).attr('href');
     const text = $(el).text();
 
@@ -31,4 +37,22 @@ function getData($: cheerio.CheerioAPI, el: cheerio.Element): FilmLink {
     }
 
     return { href, text };
+}
+
+async function loadFilm(link: FilmLink): Promise<void> {
+    const url = `${config.paths.imdb}${link.href}`;
+
+    const data = await httpClient.get(url);
+
+    const $ = cheerio.load(data);
+
+    const id = link.href.split('/')[2];
+    const title = $('[data-testid="hero-title-block__title"]').text();
+    const score = $(
+        '[data-testid="hero-rating-bar__aggregate-rating__score"] span',
+    )
+        .first()
+        .text();
+
+    console.log({ id, title, score });
 }
